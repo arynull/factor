@@ -1,10 +1,11 @@
-"""CLI surface for factor: new / list / show."""
+"""CLI surface for factor: new / list / show / render."""
 
 from __future__ import annotations
 
 import argparse
 import sys
 from decimal import Decimal
+from pathlib import Path
 
 from factor import db
 from factor.dates import to_jalali
@@ -17,6 +18,7 @@ from factor.money import (
     parse_tax_pct,
     parse_unit_price,
 )
+from factor.render import render_invoice_html
 
 
 class FactorError(Exception):
@@ -84,6 +86,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_show = sub.add_parser("show", help="show invoice detail")
     p_show.add_argument("number", type=int, help="invoice number")
+
+    p_render = sub.add_parser("render", help="render invoice to RTL Persian HTML")
+    p_render.add_argument("number", type=int, help="invoice number")
+    p_render.add_argument(
+        "-o", "--output", default=None, metavar="PATH",
+        help="output HTML file (default: stdout)",
+    )
     return parser
 
 
@@ -147,6 +156,18 @@ def cmd_show(number: int) -> int:
     return 0
 
 
+def cmd_render(number: int, output: str | None) -> int:
+    invoice = db.get_invoice(number)
+    if invoice is None:
+        raise UnknownInvoiceError(f"unknown invoice #{number}")
+    document = render_invoice_html(invoice)
+    if output is None:
+        print(document, end="")
+        return 0
+    Path(output).write_text(document, encoding="utf-8")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)  # argparse errors exit 2, no traceback
@@ -157,6 +178,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_list()
         if args.command == "show":
             return cmd_show(args.number)
+        if args.command == "render":
+            return cmd_render(args.number, args.output)
     except FactorError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return exc.exit_code
