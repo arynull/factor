@@ -1,0 +1,10 @@
+.telegram.env
+__pycache__/
+.pytest_cache/
+*.pyc
+.venv/
+MISSION.md
+SPEC.md
+PROGRESS.md
+ERROR_LOG.md
+prompts/
