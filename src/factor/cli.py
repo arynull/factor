@@ -18,6 +18,7 @@ from factor.money import (
     parse_tax_pct,
     parse_unit_price,
 )
+from factor.pdfout import render_invoice_pdf
 from factor.render import render_invoice_html
 
 
@@ -91,8 +92,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_render.add_argument("number", type=int, help="invoice number")
     p_render.add_argument(
         "-o", "--output", default=None, metavar="PATH",
-        help="output HTML file (default: stdout)",
+        help="output file (default: stdout; required with --pdf)",
     )
+    p_render.add_argument(
+        "--pdf", action="store_true", help="render as PDF instead of HTML",
+    )
+
+    p_customer = sub.add_parser("customer", help="manage customers")
+    cust_sub = p_customer.add_subparsers(dest="customer_command", required=True)
+    p_cust_add = cust_sub.add_parser("add", help="add a customer")
+    p_cust_add.add_argument("--name", required=True, help="customer name")
+    p_cust_add.add_argument("--phone", default="", help="phone number")
+    p_cust_add.add_argument("--address", default="", help="address")
+    cust_sub.add_parser("list", help="list customers")
     return parser
 
 
@@ -156,15 +168,46 @@ def cmd_show(number: int) -> int:
     return 0
 
 
-def cmd_render(number: int, output: str | None) -> int:
+def cmd_render(number: int, output: str | None, pdf: bool = False) -> int:
     invoice = db.get_invoice(number)
     if invoice is None:
         raise UnknownInvoiceError(f"unknown invoice #{number}")
+    if pdf:
+        if output is None:
+            raise FactorError("--pdf requires -o/--output (binary PDF to stdout "
+                              "is not supported)")
+        Path(output).write_bytes(render_invoice_pdf(invoice))
+        return 0
     document = render_invoice_html(invoice)
     if output is None:
         print(document, end="")
         return 0
     Path(output).write_text(document, encoding="utf-8")
+    return 0
+
+
+def cmd_customer_add(name: str, phone: str = "", address: str = "") -> int:
+    clean = name.strip()
+    if not clean:
+        raise FactorError("customer name must not be empty")
+    try:
+        customer = db.add_customer(clean, phone=phone, address=address)
+    except db.DuplicateCustomerError as exc:
+        raise FactorError(str(exc)) from None
+    except ValueError as exc:
+        raise FactorError(str(exc)) from None
+    print(customer.id)
+    return 0
+
+
+def cmd_customer_list() -> int:
+    customers = db.list_customers()
+    if not customers:
+        print("No customers.")
+        return 0
+    print(f"{'ID':>4}  {'Name':<20}  {'Phone':<15}  Address")
+    for c in customers:
+        print(f"{c.id:>4}  {c.name:<20}  {c.phone:<15}  {c.address}")
     return 0
 
 
@@ -179,7 +222,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "show":
             return cmd_show(args.number)
         if args.command == "render":
-            return cmd_render(args.number, args.output)
+            return cmd_render(args.number, args.output, pdf=args.pdf)
+        if args.command == "customer":
+            if args.customer_command == "add":
+                return cmd_customer_add(args.name, args.phone, args.address)
+            if args.customer_command == "list":
+                return cmd_customer_list()
     except FactorError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return exc.exit_code

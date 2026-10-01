@@ -11,14 +11,33 @@ from pathlib import Path
 
 from factor.money import CENT, compute_totals
 
+
+class DuplicateCustomerError(Exception):
+    """Raised when a customer name already exists."""
+
+
+@dataclass
+class Customer:
+    id: int
+    name: str
+    phone: str = ""
+    address: str = ""
+
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS customers (
+    id INTEGER PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    phone TEXT NOT NULL DEFAULT '',
+    address TEXT NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS invoices (
     id INTEGER PRIMARY KEY,
     number INTEGER UNIQUE NOT NULL,
     customer TEXT NOT NULL,
     created_at TEXT NOT NULL,
     tax_pct TEXT NOT NULL DEFAULT '0.00',
-    discount TEXT NOT NULL DEFAULT '0.00'
+    discount TEXT NOT NULL DEFAULT '0.00',
+    customer_id INTEGER NULL REFERENCES customers(id)
 );
 CREATE TABLE IF NOT EXISTS items (
     id INTEGER PRIMARY KEY,
@@ -55,6 +74,7 @@ class Invoice:
     items: list[InvoiceItem] = field(default_factory=list)
     tax_pct: str = "0.00"
     discount: str = "0.00"
+    customer_id: int | None = None
 
     @property
     def subtotal(self) -> Decimal:
@@ -88,7 +108,7 @@ def get_db_path() -> Path:
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
-    """Add v0.2.0 columns to pre-existing v0.1.0 DBs (ALTER TABLE, losslessly)."""
+    """Add v0.2.0/v0.4.0 columns to pre-existing DBs (ALTER TABLE, losslessly)."""
     cols = {row[1] for row in conn.execute("PRAGMA table_info(invoices)").fetchall()}
     if "tax_pct" not in cols:
         conn.execute(
@@ -98,6 +118,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE invoices ADD COLUMN discount TEXT NOT NULL DEFAULT '0.00'"
         )
+    if "customer_id" not in cols:
+        conn.execute("ALTER TABLE invoices ADD COLUMN customer_id INTEGER NULL")
 
 
 def connect() -> sqlite3.Connection:
@@ -109,6 +131,49 @@ def connect() -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     _migrate(conn)
     return conn
+
+
+def add_customer(name: str, phone: str = "", address: str = "") -> Customer:
+    """Insert a customer; duplicate name raises DuplicateCustomerError."""
+    clean = name.strip()
+    if not clean:
+        raise ValueError("customer name must not be empty")
+    with connect() as conn:
+        try:
+            cur = conn.execute(
+                "INSERT INTO customers (name, phone, address) VALUES (?, ?, ?)",
+                (clean, phone, address),
+            )
+        except sqlite3.IntegrityError:
+            raise DuplicateCustomerError(
+                f"customer {clean!r} already exists"
+            ) from None
+        cid = cur.lastrowid
+    assert cid is not None
+    return Customer(id=int(cid), name=clean, phone=phone, address=address)
+
+
+def list_customers() -> list[Customer]:
+    with connect() as conn:
+        rows = conn.execute("SELECT * FROM customers ORDER BY id").fetchall()
+        return [
+            Customer(id=int(r["id"]), name=r["name"], phone=r["phone"] or "",
+                     address=r["address"] or "")
+            for r in rows
+        ]
+
+
+def find_customer_by_name(name: str) -> Customer | None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM customers WHERE name = ?", (name,)
+        ).fetchone()
+        if row is None:
+            return None
+        return Customer(
+            id=int(row["id"]), name=row["name"],
+            phone=row["phone"] or "", address=row["address"] or "",
+        )
 
 
 def create_invoice(
@@ -131,6 +196,15 @@ def create_invoice(
             (number, customer, created_at, str(tax_pct), str(discount)),
         )
         invoice_id = cur.lastrowid
+        cust = conn.execute(
+            "SELECT id FROM customers WHERE name = ?", (customer,)
+        ).fetchone()
+        customer_id: int | None = int(cust["id"]) if cust is not None else None
+        if customer_id is not None:
+            conn.execute(
+                "UPDATE invoices SET customer_id = ? WHERE id = ?",
+                (customer_id, invoice_id),
+            )
         stored: list[InvoiceItem] = []
         for item in items:
             conn.execute(
@@ -159,6 +233,7 @@ def create_invoice(
         items=stored,
         tax_pct=str(tax_pct),
         discount=str(discount),
+        customer_id=customer_id,
     )
 
 
@@ -179,6 +254,9 @@ def _row_to_invoice(row: sqlite3.Row, item_rows: list[sqlite3.Row]) -> Invoice:
         ],
         tax_pct=row["tax_pct"] if "tax_pct" in keys else "0.00",
         discount=row["discount"] if "discount" in keys else "0.00",
+        customer_id=int(row["customer_id"])
+        if "customer_id" in keys and row["customer_id"] is not None
+        else None,
     )
 
 

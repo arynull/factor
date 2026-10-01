@@ -3,7 +3,7 @@ name = "factor"
 version = "0.2.0"
 description = "CLI invoicing tool"
 requires-python = ">=3.12"
-dependencies = ["jdatetime"]
+dependencies = ["jdatetime", "fpdf2", "arabic-reshaper", "python-bidi"]
 
 [project.scripts]
 factor = "factor.cli:main"
