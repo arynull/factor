@@ -1,3 +1,3 @@
-"""factor — CLI invoicing tool (v0.2.0)."""
+"""factor — CLI invoicing tool (v1.0.0)."""
 
-__version__ = "0.2.0"
+__version__ = "1.0.0"

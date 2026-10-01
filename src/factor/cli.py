@@ -7,7 +7,7 @@ import sys
 from decimal import Decimal
 from pathlib import Path
 
-from factor import db
+from factor import __version__, db
 from factor.dates import to_jalali
 from factor.db import NewItem
 from factor.money import (
@@ -59,6 +59,7 @@ def parse_item(raw: str) -> NewItem:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="factor", description="CLI invoicing tool")
+    parser.add_argument("--version", action="version", version=__version__)
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_new = sub.add_parser("new", help="create a new invoice")
@@ -150,6 +151,10 @@ def cmd_list() -> int:
 
 
 def cmd_show(number: int) -> int:
+    if number <= 0:
+        raise FactorError(
+            f"invalid invoice number {number}: must be a positive integer"
+        )
     invoice = db.get_invoice(number)
     if invoice is None:
         raise UnknownInvoiceError(f"unknown invoice #{number}")
@@ -169,6 +174,10 @@ def cmd_show(number: int) -> int:
 
 
 def cmd_render(number: int, output: str | None, pdf: bool = False) -> int:
+    if number <= 0:
+        raise FactorError(
+            f"invalid invoice number {number}: must be a positive integer"
+        )
     invoice = db.get_invoice(number)
     if invoice is None:
         raise UnknownInvoiceError(f"unknown invoice #{number}")
@@ -176,13 +185,23 @@ def cmd_render(number: int, output: str | None, pdf: bool = False) -> int:
         if output is None:
             raise FactorError("--pdf requires -o/--output (binary PDF to stdout "
                               "is not supported)")
-        Path(output).write_bytes(render_invoice_pdf(invoice))
+        try:
+            Path(output).write_bytes(render_invoice_pdf(invoice))
+        except OSError as exc:
+            raise FactorError(
+                f"cannot write to {output}: {exc.strerror or exc}"
+            ) from None
         return 0
     document = render_invoice_html(invoice)
     if output is None:
         print(document, end="")
         return 0
-    Path(output).write_text(document, encoding="utf-8")
+    try:
+        Path(output).write_text(document, encoding="utf-8")
+    except OSError as exc:
+        raise FactorError(
+            f"cannot write to {output}: {exc.strerror or exc}"
+        ) from None
     return 0
 
 
@@ -231,6 +250,9 @@ def main(argv: list[str] | None = None) -> int:
     except FactorError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return exc.exit_code
+    except Exception as exc:  # noqa: BLE001 - last-resort guard: never a traceback
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
     return 0  # unreachable; subparsers required=True
 
 

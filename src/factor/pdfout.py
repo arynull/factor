@@ -41,8 +41,11 @@ def _plain(text: str) -> str:
 
 
 def _row(pdf: FPDF, label: str, value: str) -> None:
-    pdf.cell(w=40, text=_plain(label), align="R")
-    pdf.cell(w=0, text=_plain(value), align="R", new_x="LMARGIN", new_y="NEXT")
+    # One full-width right-aligned cell ("label: value"): the label sits on
+    # the right with the value immediately to its left — proper RTL flow
+    # on a single line.
+    pdf.cell(w=0, text=_plain(f"{label}{value}"), align="R",
+             new_x="LMARGIN", new_y="NEXT")
 
 
 def render_invoice_pdf(invoice: Invoice) -> bytes:

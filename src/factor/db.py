@@ -16,6 +16,10 @@ class DuplicateCustomerError(Exception):
     """Raised when a customer name already exists."""
 
 
+class DatabaseError(Exception):
+    """Raised when the data dir or DB file cannot be used (clean message)."""
+
+
 @dataclass
 class Customer:
     id: int
@@ -124,12 +128,26 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
 def connect() -> sqlite3.Connection:
     path = get_db_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.executescript(SCHEMA)
-    _migrate(conn)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise DatabaseError(
+            f"cannot use data directory {path.parent}: {exc.strerror or exc}"
+        ) from None
+    try:
+        conn = sqlite3.connect(str(path))
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"cannot open database {path}: {exc}") from None
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.executescript(SCHEMA)
+        _migrate(conn)
+    except sqlite3.Error as exc:
+        conn.close()
+        raise DatabaseError(
+            f"database {path} is corrupt or unreadable ({exc})"
+        ) from None
     return conn
 
 
@@ -138,42 +156,57 @@ def add_customer(name: str, phone: str = "", address: str = "") -> Customer:
     clean = name.strip()
     if not clean:
         raise ValueError("customer name must not be empty")
-    with connect() as conn:
-        try:
-            cur = conn.execute(
-                "INSERT INTO customers (name, phone, address) VALUES (?, ?, ?)",
-                (clean, phone, address),
-            )
-        except sqlite3.IntegrityError:
-            raise DuplicateCustomerError(
-                f"customer {clean!r} already exists"
-            ) from None
-        cid = cur.lastrowid
+    try:
+        with connect() as conn:
+            try:
+                cur = conn.execute(
+                    "INSERT INTO customers (name, phone, address) VALUES (?, ?, ?)",
+                    (clean, phone, address),
+                )
+            except sqlite3.IntegrityError:
+                raise DuplicateCustomerError(
+                    f"customer {clean!r} already exists"
+                ) from None
+            cid = cur.lastrowid
+    except DatabaseError:
+        raise
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"database error: {exc}") from None
     assert cid is not None
     return Customer(id=int(cid), name=clean, phone=phone, address=address)
 
 
 def list_customers() -> list[Customer]:
-    with connect() as conn:
-        rows = conn.execute("SELECT * FROM customers ORDER BY id").fetchall()
-        return [
-            Customer(id=int(r["id"]), name=r["name"], phone=r["phone"] or "",
-                     address=r["address"] or "")
-            for r in rows
-        ]
+    try:
+        with connect() as conn:
+            rows = conn.execute("SELECT * FROM customers ORDER BY id").fetchall()
+            return [
+                Customer(id=int(r["id"]), name=r["name"], phone=r["phone"] or "",
+                         address=r["address"] or "")
+                for r in rows
+            ]
+    except DatabaseError:
+        raise
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"database error: {exc}") from None
 
 
 def find_customer_by_name(name: str) -> Customer | None:
-    with connect() as conn:
-        row = conn.execute(
-            "SELECT * FROM customers WHERE name = ?", (name,)
-        ).fetchone()
-        if row is None:
-            return None
-        return Customer(
-            id=int(row["id"]), name=row["name"],
-            phone=row["phone"] or "", address=row["address"] or "",
-        )
+    try:
+        with connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM customers WHERE name = ?", (name,)
+            ).fetchone()
+            if row is None:
+                return None
+            return Customer(
+                id=int(row["id"]), name=row["name"],
+                phone=row["phone"] or "", address=row["address"] or "",
+            )
+    except DatabaseError:
+        raise
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"database error: {exc}") from None
 
 
 def create_invoice(

@@ -6,6 +6,10 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 CENT = Decimal("0.01")
 
+# Upper bound for any user-supplied number (qty, price, tax %, discount).
+# Values at or above this are "absurdly large" and rejected before any math.
+MAX_MAGNITUDE = Decimal(1000000000000)  # 1e12
+
 
 def parse_quantity(raw: str) -> Decimal:
     """Parse a quantity: must be a finite positive number."""
@@ -17,6 +21,8 @@ def parse_quantity(raw: str) -> Decimal:
         raise ValueError(f"invalid quantity {raw!r}: not a finite number")
     if qty <= 0:
         raise ValueError(f"invalid quantity {raw!r}: must be positive")
+    if qty >= MAX_MAGNITUDE:
+        raise ValueError(f"invalid quantity {raw!r}: too large")
     return qty
 
 
@@ -30,6 +36,8 @@ def parse_unit_price(raw: str) -> Decimal:
         raise ValueError(f"invalid unit price {raw!r}: not a finite number")
     if price < 0:
         raise ValueError(f"invalid unit price {raw!r}: must not be negative")
+    if price >= MAX_MAGNITUDE:
+        raise ValueError(f"invalid unit price {raw!r}: too large")
     return price.quantize(CENT, rounding=ROUND_HALF_UP)
 
 
@@ -53,6 +61,8 @@ def parse_tax_pct(raw: str) -> Decimal:
         raise ValueError(f"invalid tax percent {raw!r}: not a finite number")
     if pct < 0:
         raise ValueError(f"invalid tax percent {raw!r}: must not be negative")
+    if pct >= MAX_MAGNITUDE:
+        raise ValueError(f"invalid tax percent {raw!r}: too large")
     return pct.quantize(CENT, rounding=ROUND_HALF_UP)
 
 
@@ -66,6 +76,8 @@ def parse_discount(raw: str) -> Decimal:
         raise ValueError(f"invalid discount {raw!r}: not a finite number")
     if amount < 0:
         raise ValueError(f"invalid discount {raw!r}: must not be negative")
+    if amount >= MAX_MAGNITUDE:
+        raise ValueError(f"invalid discount {raw!r}: too large")
     return amount.quantize(CENT, rounding=ROUND_HALF_UP)
 
 
