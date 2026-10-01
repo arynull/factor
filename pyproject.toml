@@ -1,0 +1,16 @@
+[project]
+name = "factor"
+version = "0.1.0"
+description = "CLI invoicing tool"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+factor = "factor.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -8,3 +8,5 @@ SPEC.md
 PROGRESS.md
 ERROR_LOG.md
 prompts/
+# hermes run logs (disk-only)
+.logs/
