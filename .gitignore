@@ -11,3 +11,4 @@ prompts/
 # local run logs (disk-only)
 .logs/
 tests/
+RUNBOOK.md
