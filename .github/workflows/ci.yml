@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check src/
+
+  install-and-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Clean install from source
+        run: |
+          python -m venv /tmp/ci-venv
+          /tmp/ci-venv/bin/pip install --quiet .
+          /tmp/ci-venv/bin/factor --version
+      - name: CLI smoke test (customer / invoice / render)
+        run: |
+          export FACTOR_DATA_DIR="$(mktemp -d)"
+          F=/tmp/ci-venv/bin/factor
+          $F customer add --name "CI Customer"
+          $F new --customer "CI Customer" --item "Widget:2:10.00" --tax 9
+          $F list | grep -q "CI Customer"
+          $F render 1 -o /tmp/ci-invoice.html
+          test -s /tmp/ci-invoice.html
+          echo "smoke OK"

@@ -12,3 +12,9 @@ prompts/
 .logs/
 tests/
 RUNBOOK.md
+
+# python build artifacts
+build/
+dist/
+*.egg-info/
+.coverage
