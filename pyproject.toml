@@ -1,6 +1,6 @@
 [project]
 name = "factor"
-version = "1.0.0"
+version = "1.1.0"
 description = "CLI invoicing tool"
 requires-python = ">=3.12"
 dependencies = ["jdatetime", "fpdf2", "arabic-reshaper", "python-bidi"]

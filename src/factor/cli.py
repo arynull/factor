@@ -1,16 +1,17 @@
-"""CLI surface for factor: new / list / show / render."""
+"""CLI surface for factor: new / list / show / render / stats."""
 
 from __future__ import annotations
 
 import argparse
 import sys
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 from factor import __version__, db
 from factor.dates import to_jalali
 from factor.db import NewItem
 from factor.money import (
+    CENT,
     fmt_money,
     line_total,
     parse_discount,
@@ -99,6 +100,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--pdf", action="store_true", help="render as PDF instead of HTML",
     )
 
+    sub.add_parser("stats", help="revenue summary over all invoices")
+
     p_customer = sub.add_parser("customer", help="manage customers")
     cust_sub = p_customer.add_subparsers(dest="customer_command", required=True)
     p_cust_add = cust_sub.add_parser("add", help="add a customer")
@@ -173,6 +176,31 @@ def cmd_show(number: int) -> int:
     return 0
 
 
+def cmd_stats() -> int:
+    """Print a revenue summary over every invoice. An empty DB is not an error."""
+    invoices = db.list_invoices()
+    subtotal = Decimal("0.00")
+    discount = Decimal("0.00")
+    tax = Decimal("0.00")
+    total = Decimal("0.00")
+    for inv in invoices:
+        subtotal += inv.subtotal
+        discount += Decimal(inv.discount)
+        tax += inv.tax_amount
+        total += inv.total
+    count = len(invoices)
+    average = Decimal("0.00")
+    if count:
+        average = (total / count).quantize(CENT, rounding=ROUND_HALF_UP)
+    print(f"Invoices: {count}")
+    print(f"Subtotal: {fmt_money(subtotal)}")
+    print(f"Discount: {fmt_money(discount)}")
+    print(f"Tax: {fmt_money(tax)}")
+    print(f"Total: {fmt_money(total)}")
+    print(f"Average: {fmt_money(average)}")
+    return 0
+
+
 def cmd_render(number: int, output: str | None, pdf: bool = False) -> int:
     if number <= 0:
         raise FactorError(
@@ -242,6 +270,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_show(args.number)
         if args.command == "render":
             return cmd_render(args.number, args.output, pdf=args.pdf)
+        if args.command == "stats":
+            return cmd_stats()
         if args.command == "customer":
             if args.customer_command == "add":
                 return cmd_customer_add(args.name, args.phone, args.address)
