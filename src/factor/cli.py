@@ -1,8 +1,9 @@
-"""CLI surface for factor: new / list / show / render / stats."""
+"""CLI surface for factor: new / list / show / render / stats / export / customer."""
 
 from __future__ import annotations
 
 import argparse
+import csv
 import sys
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
@@ -101,6 +102,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     sub.add_parser("stats", help="revenue summary over all invoices")
+
+    p_export = sub.add_parser("export", help="export all invoices to CSV")
+    p_export.add_argument(
+        "-o", "--output", default=None, metavar="PATH",
+        help="output CSV file (default: stdout)",
+    )
 
     p_customer = sub.add_parser("customer", help="manage customers")
     cust_sub = p_customer.add_subparsers(dest="customer_command", required=True)
@@ -201,6 +208,38 @@ def cmd_stats() -> int:
     return 0
 
 
+def cmd_export(output: str | None) -> int:
+    invoices = db.list_invoices()
+    header = ["number", "customer", "date", "subtotal", "discount", "tax", "total"]
+    rows = [
+        [
+            inv.number,
+            inv.customer,
+            to_jalali(inv.created_at),
+            fmt_money(inv.subtotal),
+            fmt_money(Decimal(inv.discount)),
+            fmt_money(inv.tax_amount),
+            fmt_money(inv.total),
+        ]
+        for inv in invoices
+    ]
+    if output is None:
+        writer = csv.writer(sys.stdout)
+        writer.writerow(header)
+        writer.writerows(rows)
+        return 0
+    try:
+        with open(output, "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+            writer.writerows(rows)
+    except OSError as exc:
+        raise FactorError(
+            f"cannot write to {output}: {exc.strerror or exc}"
+        ) from None
+    return 0
+
+
 def cmd_render(number: int, output: str | None, pdf: bool = False) -> int:
     if number <= 0:
         raise FactorError(
@@ -272,6 +311,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_render(args.number, args.output, pdf=args.pdf)
         if args.command == "stats":
             return cmd_stats()
+        if args.command == "export":
+            return cmd_export(args.output)
         if args.command == "customer":
             if args.customer_command == "add":
                 return cmd_customer_add(args.name, args.phone, args.address)

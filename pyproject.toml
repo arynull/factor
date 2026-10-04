@@ -1,9 +1,9 @@
 [project]
 name = "factor"
-version = "1.1.0"
+version = "1.2.0"
 description = "CLI invoicing tool"
 requires-python = ">=3.12"
-dependencies = ["jdatetime", "fpdf2", "arabic-reshaper", "python-bidi"]
+dependencies = ["jdatetime", "fpdf2>=2.8.8", "arabic-reshaper", "python-bidi"]
 
 [project.scripts]
 factor = "factor.cli:main"

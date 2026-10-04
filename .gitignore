@@ -7,6 +7,7 @@ MISSION.md
 SPEC.md
 PROGRESS.md
 ERROR_LOG.md
+RESEARCH.md
 prompts/
 # local run logs (disk-only)
 .logs/
@@ -18,3 +19,4 @@ build/
 dist/
 *.egg-info/
 .coverage
+.aider*
