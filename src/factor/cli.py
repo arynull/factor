@@ -1,4 +1,4 @@
-"""CLI surface for factor: new / list / show / render / stats / export / customer."""
+"""CLI surface for factor: new / list / show / duplicate / render / stats / export / customer."""
 
 from __future__ import annotations
 
@@ -91,6 +91,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_show = sub.add_parser("show", help="show invoice detail")
     p_show.add_argument("number", type=int, help="invoice number")
 
+    p_dup = sub.add_parser("duplicate", help="duplicate an invoice")
+    p_dup.add_argument("number", type=int, help="invoice number")
+
     p_render = sub.add_parser("render", help="render invoice to RTL Persian HTML")
     p_render.add_argument("number", type=int, help="invoice number")
     p_render.add_argument(
@@ -180,6 +183,33 @@ def cmd_show(number: int) -> int:
     print(f"Discount: {fmt_money(Decimal(invoice.discount))}")
     print(f"Tax ({fmt_money(Decimal(invoice.tax_pct))}%): {fmt_money(invoice.tax_amount)}")
     print(f"Total: {fmt_money(invoice.total)}")
+    return 0
+
+
+def cmd_duplicate(number: int) -> int:
+    if number <= 0:
+        raise FactorError(
+            f"invalid invoice number {number}: must be a positive integer"
+        )
+    invoice = db.get_invoice(number)
+    if invoice is None:
+        raise UnknownInvoiceError(f"unknown invoice #{number}")
+    items = [
+        NewItem(
+            description=item.description,
+            qty=Decimal(item.qty),
+            unit_price=Decimal(item.unit_price),
+            line_total=line_total(Decimal(item.qty), Decimal(item.unit_price)),
+        )
+        for item in invoice.items
+    ]
+    new_invoice = db.create_invoice(
+        invoice.customer,
+        items,
+        tax_pct=Decimal(invoice.tax_pct),
+        discount=Decimal(invoice.discount),
+    )
+    print(new_invoice.number)
     return 0
 
 
@@ -307,6 +337,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_list()
         if args.command == "show":
             return cmd_show(args.number)
+        if args.command == "duplicate":
+            return cmd_duplicate(args.number)
         if args.command == "render":
             return cmd_render(args.number, args.output, pdf=args.pdf)
         if args.command == "stats":
