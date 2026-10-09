@@ -94,6 +94,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_dup = sub.add_parser("duplicate", help="duplicate an invoice")
     p_dup.add_argument("number", type=int, help="invoice number")
 
+    p_pay = sub.add_parser("pay", help="mark an invoice as paid")
+    p_pay.add_argument("number", type=int, help="invoice number")
+
+    p_void = sub.add_parser("void", help="void an invoice")
+    p_void.add_argument("number", type=int, help="invoice number")
+
     p_render = sub.add_parser("render", help="render invoice to RTL Persian HTML")
     p_render.add_argument("number", type=int, help="invoice number")
     p_render.add_argument(
@@ -154,10 +160,11 @@ def cmd_list() -> int:
     if not invoices:
         print("No invoices.")
         return 0
-    print(f"{'No.':>4}  {'Customer':<20}  {'Date':<12}  {'Total':>10}")
+    print(f"{'No.':>4}  {'Customer':<20}  {'Date':<12}  {'Status':<6}  {'Total':>10}")
     for inv in invoices:
         print(
             f"{inv.number:>4}  {inv.customer:<20}  {to_jalali(inv.created_at):<12}"
+            f"  {inv.status:<6}"
             f"  {fmt_money(inv.total):>10}"
         )
     return 0
@@ -174,6 +181,7 @@ def cmd_show(number: int) -> int:
     print(f"Invoice #{invoice.number}")
     print(f"Customer: {invoice.customer}")
     print(f"Date: {to_jalali(invoice.created_at)}")
+    print(f"Status: {invoice.status}")
     print("Items:")
     for item in invoice.items:
         print(
@@ -210,6 +218,34 @@ def cmd_duplicate(number: int) -> int:
         discount=Decimal(invoice.discount),
     )
     print(new_invoice.number)
+    return 0
+
+
+def cmd_pay(number: int) -> int:
+    if number <= 0:
+        raise FactorError(f"invalid invoice number {number}: must be a positive integer")
+    try:
+        db.set_invoice_status(number, "paid")
+    except ValueError as exc:
+        message = str(exc)
+        if message.startswith("unknown invoice"):
+            raise UnknownInvoiceError(message) from None
+        raise FactorError(message) from None
+    print(f"Invoice #{number} marked as paid.")
+    return 0
+
+
+def cmd_void(number: int) -> int:
+    if number <= 0:
+        raise FactorError(f"invalid invoice number {number}: must be a positive integer")
+    try:
+        db.set_invoice_status(number, "void")
+    except ValueError as exc:
+        message = str(exc)
+        if message.startswith("unknown invoice"):
+            raise UnknownInvoiceError(message) from None
+        raise FactorError(message) from None
+    print(f"Invoice #{number} voided.")
     return 0
 
 
@@ -339,6 +375,10 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_show(args.number)
         if args.command == "duplicate":
             return cmd_duplicate(args.number)
+        if args.command == "pay":
+            return cmd_pay(args.number)
+        if args.command == "void":
+            return cmd_void(args.number)
         if args.command == "render":
             return cmd_render(args.number, args.output, pdf=args.pdf)
         if args.command == "stats":

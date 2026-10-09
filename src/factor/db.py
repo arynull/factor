@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS invoices (
     created_at TEXT NOT NULL,
     tax_pct TEXT NOT NULL DEFAULT '0.00',
     discount TEXT NOT NULL DEFAULT '0.00',
-    customer_id INTEGER NULL REFERENCES customers(id)
+    customer_id INTEGER NULL REFERENCES customers(id),
+    status TEXT NOT NULL DEFAULT 'issued'
 );
 CREATE TABLE IF NOT EXISTS items (
     id INTEGER PRIMARY KEY,
@@ -79,6 +80,7 @@ class Invoice:
     tax_pct: str = "0.00"
     discount: str = "0.00"
     customer_id: int | None = None
+    status: str = "issued"
 
     @property
     def subtotal(self) -> Decimal:
@@ -124,6 +126,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         )
     if "customer_id" not in cols:
         conn.execute("ALTER TABLE invoices ADD COLUMN customer_id INTEGER NULL")
+    if "status" not in cols:
+        conn.execute("ALTER TABLE invoices ADD COLUMN status TEXT NOT NULL DEFAULT 'issued'")
 
 
 def connect() -> sqlite3.Connection:
@@ -290,6 +294,7 @@ def _row_to_invoice(row: sqlite3.Row, item_rows: list[sqlite3.Row]) -> Invoice:
         customer_id=int(row["customer_id"])
         if "customer_id" in keys and row["customer_id"] is not None
         else None,
+        status=row["status"] if "status" in keys else "issued",
     )
 
 
@@ -318,6 +323,35 @@ def get_invoice(number: int) -> Invoice | None:
             (row["id"],),
         ).fetchall()
         return _row_to_invoice(row, items)
+
+
+def set_invoice_status(number: int, status: str) -> Invoice:
+    """Mark an invoice paid or void. Returns the updated invoice.
+
+    Raises ValueError for unknown numbers, invalid statuses, and
+    illegal transitions (pay requires 'issued'; void requires
+    'issued' or 'paid').
+    """
+    if status not in ("paid", "void"):
+        raise ValueError(f"invalid status {status!r}")
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT status FROM invoices WHERE number = ?", (number,)
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"unknown invoice #{number}")
+        current = row["status"]
+        if status == "paid":
+            if current != "issued":
+                raise ValueError(f"cannot pay invoice #{number}: status is {current}")
+        elif current == "void":
+            raise ValueError(f"invoice #{number} is already void")
+        conn.execute(
+            "UPDATE invoices SET status = ? WHERE number = ?", (status, number)
+        )
+    updated = get_invoice(number)
+    assert updated is not None
+    return updated
 
 
 def count_invoices() -> int:
