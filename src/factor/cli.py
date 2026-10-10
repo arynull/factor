@@ -1,10 +1,11 @@
-"""CLI surface for factor: new / list / show / duplicate / render / stats / export / customer."""
+"""CLI surface for factor: new / list / show / duplicate / render / stats / export / customer / overdue."""
 
 from __future__ import annotations
 
 import argparse
 import csv
 import sys
+from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
@@ -116,6 +117,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_export.add_argument(
         "-o", "--output", default=None, metavar="PATH",
         help="output CSV file (default: stdout)",
+    )
+
+    p_overdue = sub.add_parser("overdue", help="list unpaid invoices past due")
+    p_overdue.add_argument(
+        "--days", type=int, default=30, metavar="N",
+        help="list invoices created more than N days ago (default: 30)",
     )
 
     p_customer = sub.add_parser("customer", help="manage customers")
@@ -363,6 +370,18 @@ def cmd_customer_list() -> int:
     return 0
 
 
+def cmd_overdue(days: int) -> int:
+    invoices = db.list_overdue(days)
+    if not invoices:
+        print("No overdue invoices.")
+        return 0
+    today = datetime.now(UTC).date()
+    for inv in invoices:
+        age = (today - datetime.fromisoformat(inv.created_at).date()).days
+        print(f"{inv.number} {inv.customer} {fmt_money(inv.total)} {age}d")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)  # argparse errors exit 2, no traceback
@@ -390,6 +409,8 @@ def main(argv: list[str] | None = None) -> int:
                 return cmd_customer_add(args.name, args.phone, args.address)
             if args.customer_command == "list":
                 return cmd_customer_list()
+        if args.command == "overdue":
+            return cmd_overdue(args.days)
     except FactorError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return exc.exit_code

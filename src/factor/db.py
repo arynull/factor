@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
@@ -308,6 +308,24 @@ def list_invoices() -> list[Invoice]:
                 (row["id"],),
             ).fetchall()
             result.append(_row_to_invoice(row, items))
+    return result
+
+
+def list_overdue(days: int) -> list[Invoice]:
+    """Return unpaid invoices created more than `days` days ago."""
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM invoices WHERE status = 'issued' ORDER BY number"
+        ).fetchall()
+        result = []
+        for row in rows:
+            if datetime.fromisoformat(row["created_at"]) < cutoff:
+                items = conn.execute(
+                    "SELECT * FROM items WHERE invoice_id = ? ORDER BY id",
+                    (row["id"],),
+                ).fetchall()
+                result.append(_row_to_invoice(row, items))
     return result
 
 
