@@ -87,7 +87,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="fixed discount amount, decimal >= 0, must not exceed subtotal",
     )
 
-    sub.add_parser("list", help="list all invoices")
+    p_list = sub.add_parser("list", help="list all invoices")
+    p_list.add_argument(
+        "--limit", type=int, default=None, metavar="N",
+        help="show at most N invoices (default: show all)",
+    )
 
     p_show = sub.add_parser("show", help="show invoice detail")
     p_show.add_argument("number", type=int, help="invoice number")
@@ -162,8 +166,14 @@ def cmd_new(
     return 0
 
 
-def cmd_list() -> int:
+def cmd_list(limit: int | None = None) -> int:
+    if limit is not None and limit <= 0:
+        raise FactorError(
+            f"invalid --limit {limit}: must be a positive integer"
+        )
     invoices = db.list_invoices()
+    if limit is not None:
+        invoices = invoices[:limit]
     if not invoices:
         print("No invoices.")
         return 0
@@ -389,7 +399,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "new":
             return cmd_new(args.customer, args.item, args.tax, args.discount)
         if args.command == "list":
-            return cmd_list()
+            return cmd_list(args.limit)
         if args.command == "show":
             return cmd_show(args.number)
         if args.command == "duplicate":
