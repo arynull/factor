@@ -176,7 +176,8 @@ def add_customer(name: str, phone: str = "", address: str = "") -> Customer:
         raise
     except sqlite3.Error as exc:
         raise DatabaseError(f"database error: {exc}") from None
-    assert cid is not None
+    if cid is None:
+        raise DatabaseError("database error: insert did not return a row id")
     return Customer(id=int(cid), name=clean, phone=phone, address=address)
 
 
@@ -368,7 +369,8 @@ def set_invoice_status(number: int, status: str) -> Invoice:
             "UPDATE invoices SET status = ? WHERE number = ?", (status, number)
         )
     updated = get_invoice(number)
-    assert updated is not None
+    if updated is None:
+        raise DatabaseError(f"database error: invoice #{number} not found after update")
     return updated
 
 
